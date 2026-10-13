@@ -554,6 +554,7 @@
     stats: stats
     notes_panel: notes_panel
     info: info
+    explain: explain
     note: note
     status: status
     timer_or_movetree: timer_or_movetree
@@ -638,13 +639,16 @@
         id: notes_panel
         size_hint_y_open: 1
         closed_label: 'closedlabel:info&notes'
-        options: ['info','info-details','notes']
-        option_colors: [Theme.INFO_TAB_FONT_COLOR,Theme.INFO_TAB_FONT_COLOR,Theme.NOTES_TAB_FONT_COLOR]
-        option_active: [True,False,False]
+        options: ['info','info-details','explain','notes']
+        option_colors: [Theme.INFO_TAB_FONT_COLOR,Theme.INFO_TAB_FONT_COLOR,Theme.EXPLAIN_TAB_FONT_COLOR,Theme.NOTES_TAB_FONT_COLOR]
+        option_active: [False,False,True,False]
         on_option_state:
             info.detailed = args[1]['info-details']
             info.size_hint_y = int(args[1]['info'] or info.detailed)+EPSILON
             info.opacity =  int(args[1]['info'] or info.detailed)
+            explain.active = args[1]['explain']
+            explain.size_hint_y = int(args[1]['explain'])*1.5+EPSILON
+            explain.opacity = int(args[1]['explain'])
             notebox.size_hint_y = int(args[1]['notes'])*0.66+EPSILON
             notebox.opacity = int(args[1]['notes'])
             app.gui.update_state()
@@ -667,6 +671,13 @@
                 on_ref_press: root.katrain.board_gui.show_pv_from_comments(args[1])
                 size_hint: 1, 1
                 height: self.parent.height - status.height - note.height - 1
+            ScrollableLabel:
+                id: explain
+                active: True
+                line_height: 1.35
+                markup: True
+                on_ref_press: root.katrain.board_gui.show_pv_from_comments(args[1])
+                size_hint: 1, 1.5
             AnchorLayout:
                 padding: 0
                 id: notebox

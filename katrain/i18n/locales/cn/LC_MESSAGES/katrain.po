@@ -1035,3 +1035,15 @@ msgstr "在棋盘上显示手数（按 'm' 键切换）"
 
 msgid "general:anim_pv_moves"
 msgstr "演示变化时显示的手数（0 表示不演示）"
+
+msgid "tab:explain"
+msgstr "讲解"
+
+msgid "explain:locked"
+msgstr "锁定 AI 时不显示讲解。"
+
+msgid "explain:waiting"
+msgstr "正在等这一手和上一手的分析结果……"
+
+msgid "explain:show pv"
+msgstr "在棋盘上看 AI 推荐的 {move} 变化"

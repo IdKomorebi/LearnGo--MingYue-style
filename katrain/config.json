@@ -203,6 +203,7 @@
                     {
                         "info": true,
                         "info-details": false,
+                        "explain": true,
                         "notes": false
                     }
                 ]
@@ -235,8 +236,9 @@
                 "notes_panel": [
                     "open",
                     {
-                        "info": true,
-                        "info-details": true,
+                        "info": false,
+                        "info-details": false,
+                        "explain": true,
                         "notes": false
                     }
                 ]
@@ -246,6 +248,7 @@
     "explain": {
         "enabled": true,
         "llm": false,
-        "model": "claude-opus-5-5"
+        "model": "claude-opus-5-5",
+        "key_move_visits": 1000
     }
 }

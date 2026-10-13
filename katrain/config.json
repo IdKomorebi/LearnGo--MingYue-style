@@ -242,5 +242,10 @@
                 ]
             }
         }
+    },
+    "explain": {
+        "enabled": true,
+        "llm": false,
+        "model": "claude-opus-5-5"
     }
 }

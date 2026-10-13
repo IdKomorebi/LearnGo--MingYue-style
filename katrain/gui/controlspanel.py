@@ -14,6 +14,7 @@ from katrain.core.constants import (
     STATUS_ANALYSIS,
     STATUS_ERROR,
 )
+from katrain.core.explain.service import ExplainService
 from katrain.core.lang import rank_label
 from katrain.gui.sound import play_sound, stop_sound
 from katrain.gui.theme import Theme
@@ -162,6 +163,12 @@ class ControlsPanel(BoxLayout):
             info += self.active_comment_node.comment(
                 teach=katrain.players_info[self.active_comment_node.player].being_taught, details=details
             )
+            if not lock_ai and move:
+                if getattr(self, "explain_service", None) is None:
+                    self.explain_service = ExplainService(katrain)
+                explanation = self.explain_service.explain(self.active_comment_node)
+                if explanation:
+                    info += "\n[b]讲解[/b]\n" + explanation + "\n"
 
         if self.active_comment_node.analysis_exists:
             self.stats.score = self.active_comment_node.format_score() or ""

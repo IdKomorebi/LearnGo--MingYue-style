@@ -1,3 +1,15 @@
+# LearnGo--MingYue style
+
+> 本仓库以 [KaTrain](https://github.com/sanderland/katrain)（MIT 协议）为基础，加入“理解 KataGo”的讲解层：把 KataGo 的胜率、目差、推荐点、变化、ownership 翻译成人话，讲解风格参考明玥谈棋。
+>
+> - 方案与路线图：[docs/mingyue/方案.md](docs/mingyue/方案.md)
+> - 更新日志：[docs/mingyue/更新日志.md](docs/mingyue/更新日志.md)
+> - 讲解层代码：[katrain/core/explain/](katrain/core/explain/)
+>
+> 以下是 KaTrain 原版说明。
+
+---
+
 # <a name="manual"></a> KaTrain
 
 [![Latest Release](https://img.shields.io/github/release/sanderland/katrain?label=download)](https://github.com/sanderland/katrain/releases)

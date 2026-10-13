@@ -138,7 +138,7 @@ jobs:
         pushd ../KataGo/cpp
         cmake -G Ninja . -DUSE_BACKEND=${{ matrix.backend }} -DBUILD_DISTRIBUTED=1
         cmake --build . -j$(sysctl -n hw.ncpu)
-        cp katago ../../katrain/katrain/KataGo/katago-osx
+        cp katago "$GITHUB_WORKSPACE/katrain/KataGo/katago-osx"  # repo dir name differs from upstream "katrain"
         popd
 
     - name: Build app with PyInstaller

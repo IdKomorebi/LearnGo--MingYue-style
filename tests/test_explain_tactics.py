@@ -83,3 +83,24 @@ def test_where_the_loss_is():
     assert "白D" in text and "已死" in text
     for filler in ("本手", "这就是高手", "围棋就是这么残酷", "细节就是胜负"):
         assert filler not in text
+
+
+def test_real_game_move78_wedge():
+    """人机大战第四局 78 手（李世石的挖），200 visits，带每个候选的 ownership。"""
+    import json
+    import os
+
+    here = os.path.dirname(__file__)
+    moves = json.load(open(os.path.join(here, "..", "tools", "mingyue", "g4_moves.json")))["moves"]
+    by_turn = {}
+    for line in open(os.path.join(here, "data", "g4_katago_analysis_200v.jsonl"), encoding="utf-8"):
+        d = json.loads(line)
+        by_turn[d["turnNumber"]] = d
+    f78 = extract_move_facts(moves, 77, by_turn[77], by_turn[78])
+    assert f78.played_label == "挖" and "挖进黑K11一子和黑M11" in f78.played_phrase
+    assert f78.surprise and f78.instinct_move == "J11"
+    f79 = extract_move_facts(moves, 78, by_turn[78], by_turn[79])
+    assert f79.best_move == "H12" and f79.best_label == "打吃"
+    assert f79.best_steps[0]["label"] == "打吃"
+    text = render_mingyue(f79, "AlphaGo", "李世石")
+    assert "黑H12打吃 →" in text

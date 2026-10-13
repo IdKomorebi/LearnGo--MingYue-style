@@ -96,10 +96,11 @@ def render_mingyue(f: MoveFacts, black_name: str = "黑棋", white_name: str = "
             lines.append(f"差距落在{d.name}：两种下法之后它{change}。")
         else:
             lines.append(f"差距落在{d.name}：按 AI 首选它是“{d.best}”，实战下完是“{d.actual}”。")
-    if f.loss_regions and not f.is_best:
+    if f.loss_regions and not f.is_best and f.points_lost >= 1.5:
+        # 区域差是两张 ownership 图相减，各区域会互相抵消，单个区域的数字可能比总目损大，所以只说位置
         r = f.loss_regions[0]
         if r["points"] > 0:
-            lines.append(f"按地盘算，差距主要在{r['region']}，约 {r['points']:.0f} 目。")
+            lines.append(f"从地盘看，两种下法的差别主要在{r['region']}。")
     if not f.fate_diffs and not f.loss_regions:
         gains = [s for s in f.territory_swings if abs(s["points"]) >= 3]
         if gains:

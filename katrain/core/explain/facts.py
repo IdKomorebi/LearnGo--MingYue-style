@@ -8,7 +8,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Sequence
 
-from katrain.core.explain.board import Board, coord_to_gtp, gtp_to_coord, ownership_index
+from katrain.core.explain.board import Board, Coord, coord_to_gtp, gtp_to_coord, ownership_index
 from katrain.core.explain.geometry import describe_point, region_of, summarize_region
 from katrain.core.explain.tactics import analyze_move, describe_sequence, group_ref
 
@@ -146,14 +146,22 @@ def _avg_status(stones, color: str, own: Sequence[float], size: int) -> float:
     return sum(cs * own[ownership_index(s, size)] for s in stones) / len(stones)
 
 
-def _fate_diffs(board: Board, own_actual, own_best, size: int, limit: int = 2) -> List[FateDiff]:
-    """实战局面上的每块棋，比较两种下法之后的 ownership：哪块棋的命运因为没下首选而变了。"""
+def _fate_diffs(
+    board: Board, player: str, played: Optional[Coord], own_actual, own_best, size: int, limit: int = 2
+) -> List[FateDiff]:
+    """实战局面上的每块棋，比较两种下法之后的 ownership：只挑“没下首选所以吃亏”的棋块。
+    刚下的那颗子不参与平均（按首选下时它根本不存在）。"""
     out = []
+    sg = sign(player)
     for color, stones, _ in board.groups():
-        sa = _avg_status(stones, color, own_actual, size)
-        sb = _avg_status(stones, color, own_best, size)
+        old = [s for s in stones if s != played]
+        if not old:
+            continue
+        sa = _avg_status(old, color, own_actual, size)
+        sb = _avg_status(old, color, own_best, size)
         d = sb - sa
-        if abs(d) < 0.4 or (len(stones) < 2 and abs(d) < 0.8):
+        loss = d if sign(color) == sg else -d  # 落子方视角：首选比实战好多少
+        if loss < 0.4 or (len(old) < 2 and loss < 0.8):
             continue
         ref = group_ref(board, stones)
         out.append(
@@ -226,7 +234,7 @@ def extract_move_facts(
     own_best = best.get("ownership")
     fate_diffs, loss_regions = [], []
     if own_actual and own_best and best["move"] != gtp:
-        fate_diffs = _fate_diffs(board, own_actual, own_best, size)
+        fate_diffs = _fate_diffs(board, player, gtp_to_coord(gtp, size), own_actual, own_best, size)
         loss_regions = _region_diff(own_best, own_actual, sg, size, threshold=1.0, limit=2)
 
     # 棋块死活变化

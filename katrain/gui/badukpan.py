@@ -780,6 +780,14 @@ class BadukPanWidget(Widget):
                 x, y = Move.from_gtp(gtp).coords
                 if x < board_size_x and y < board_size_y:
                     Line(circle=(*self.gridpos[y][x], self.stone_size * 1.05), width=dp(1.6))
+        # 差在哪里：和 AI 首选相比命运不同的棋块，统一用“变差”的颜色标出亏损所在
+        ringed = {s for g in facts.group_changes for s in g.stones}
+        Color(*Theme.EXPLAIN_GROUP_WORSE_COLOR)
+        for diff in getattr(facts, "fate_diffs", []):
+            for gtp in diff.stones:
+                x, y = Move.from_gtp(gtp).coords
+                if gtp not in ringed and x < board_size_x and y < board_size_y:
+                    Line(circle=(*self.gridpos[y][x], self.stone_size * 1.05), width=dp(1.6))
         if not facts.is_best and facts.best_move != "pass":
             x, y = Move.from_gtp(facts.best_move).coords
             if x < board_size_x and y < board_size_y:

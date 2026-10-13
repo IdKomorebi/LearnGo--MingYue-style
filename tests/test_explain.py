@@ -46,6 +46,26 @@ def test_service_renders_in_katrain():
     katrain = KaTrainBase(force_package_config=True, debug_level=0)
     service = ExplainService(katrain)
     turn = max(t for t in analyses if t - 1 in analyses)
-    text = service.explain(nodes[turn])
+    text, facts = service.explain(nodes[turn])
     assert f"第 {turn} 手" in text
+    assert facts is nodes[turn].explain_facts and facts.move == nodes[turn].move.gtp()
+    assert all(len(g.stones) == g.size for g in facts.group_changes)
     assert render_mingyue(facts_from_game_node(nodes[turn]), "AlphaGo", "Lee Sedol") != ""
+
+
+def test_key_move_gets_deeper_analysis():
+    nodes, analyses, _ = load_game_with_analysis()
+    katrain = KaTrainBase(force_package_config=True, debug_level=0)
+    requested = []
+
+    class FakeEngine:
+        def request_analysis(self, node, callback, visits=None, **kwargs):
+            requested.append((node.depth, visits))
+
+    katrain.engine = FakeEngine()
+    service = ExplainService(katrain)
+    _, facts = service.explain(nodes[78])  # 78 手是妙手（AI 第一感很低），只算了 60 步
+    assert facts.surprise
+    assert sorted(requested) == [(77, 1000), (78, 1000)]
+    service.explain(nodes[78])  # 同一节点只加算一次
+    assert len(requested) == 2

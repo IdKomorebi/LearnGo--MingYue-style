@@ -1129,3 +1129,15 @@ msgstr "Custom command"
 
 msgid "engine:backend:note"
 msgstr "The selected tab determines the engine used."
+
+msgid "tab:explain"
+msgstr "Explain"
+
+msgid "explain:locked"
+msgstr "Explanations are hidden while the AI is locked."
+
+msgid "explain:waiting"
+msgstr "Waiting for analysis of this move and the previous position..."
+
+msgid "explain:show pv"
+msgstr "Show the AI line from {move} on the board"

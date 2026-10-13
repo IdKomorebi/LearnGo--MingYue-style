@@ -761,7 +761,30 @@ class BadukPanWidget(Widget):
                             (*colors[pol_order][:3], Theme.GHOST_ALPHA),
                         )
 
+            self.draw_explain_highlights(board_size_x, board_size_y)
+
         self.redraw_hover_contents_trigger()
+
+    def draw_explain_highlights(self, board_size_x, board_size_y):
+        """讲解标签页打开时，把讲解里提到的推荐点和死活有变化的棋块标在棋盘上。"""
+        controls = self.katrain.controls
+        explain = getattr(controls, "explain", None)
+        node = controls.active_comment_node
+        facts = getattr(node, "explain_facts", None) if node is not None else None
+        if not (explain is not None and explain.active and facts) or node is not self.katrain.game.current_node:
+            return
+        for group in facts.group_changes:
+            color = Theme.EXPLAIN_GROUP_WORSE_COLOR if group.delta < 0 else Theme.EXPLAIN_GROUP_BETTER_COLOR
+            Color(*color)
+            for gtp in group.stones:
+                x, y = Move.from_gtp(gtp).coords
+                if x < board_size_x and y < board_size_y:
+                    Line(circle=(*self.gridpos[y][x], self.stone_size * 1.05), width=dp(1.6))
+        if not facts.is_best and facts.best_move != "pass":
+            x, y = Move.from_gtp(facts.best_move).coords
+            if x < board_size_x and y < board_size_y:
+                Color(*Theme.EXPLAIN_BEST_MOVE_COLOR)
+                Line(circle=(*self.gridpos[y][x], self.stone_size * 1.1), width=dp(2.4))
 
     def draw_territory(self, grid, loss_color=None):
         if Theme.TERRITORY_DISPLAY == "marks":

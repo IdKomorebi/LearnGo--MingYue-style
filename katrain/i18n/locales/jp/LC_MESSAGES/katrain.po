@@ -1088,3 +1088,19 @@ msgstr "盤上に手数を表示する（'m' キーで切り替え）"
 
 msgid "general:anim_pv_moves"
 msgstr "手順アニメーションで表示する手数（0 でアニメーションしない）"
+
+#. TODO
+msgid "explain:locked"
+msgstr "Explanations are hidden while the AI is locked."
+
+#. TODO
+msgid "tab:explain"
+msgstr "Explain"
+
+#. TODO
+msgid "explain:show pv"
+msgstr "Show the AI line from {move} on the board"
+
+#. TODO
+msgid "explain:waiting"
+msgstr "Waiting for analysis of this move and the previous position..."

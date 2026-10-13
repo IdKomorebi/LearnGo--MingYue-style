@@ -1142,3 +1142,19 @@ msgstr "Показувати номери ходів на дошці (перем
 msgid "general:anim_pv_moves"
 msgstr ""
 "Скільки ходів показувати під час анімації послідовності (0 — не анімувати)"
+
+#. TODO
+msgid "explain:locked"
+msgstr "Explanations are hidden while the AI is locked."
+
+#. TODO
+msgid "tab:explain"
+msgstr "Explain"
+
+#. TODO
+msgid "explain:show pv"
+msgstr "Show the AI line from {move} on the board"
+
+#. TODO
+msgid "explain:waiting"
+msgstr "Waiting for analysis of this move and the previous position..."

@@ -1025,3 +1025,19 @@ msgstr "바둑판에 수순 표시 ('m' 키로 전환)"
 
 msgid "general:anim_pv_moves"
 msgstr "수순 애니메이션에서 표시할 수순 수 (0이면 애니메이션 안 함)"
+
+#. TODO
+msgid "explain:locked"
+msgstr "Explanations are hidden while the AI is locked."
+
+#. TODO
+msgid "tab:explain"
+msgstr "Explain"
+
+#. TODO
+msgid "explain:show pv"
+msgstr "Show the AI line from {move} on the board"
+
+#. TODO
+msgid "explain:waiting"
+msgstr "Waiting for analysis of this move and the previous position..."

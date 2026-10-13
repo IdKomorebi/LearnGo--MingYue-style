@@ -4,6 +4,7 @@ from kivy.clock import Clock
 from kivy.properties import ObjectProperty, OptionProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
+from kivy.utils import escape_markup
 
 from katrain.core.constants import (
     AI_DEFAULT,
@@ -15,7 +16,7 @@ from katrain.core.constants import (
     STATUS_ERROR,
 )
 from katrain.core.explain.service import ExplainService
-from katrain.core.lang import rank_label
+from katrain.core.lang import i18n, rank_label
 from katrain.gui.sound import play_sound, stop_sound
 from katrain.gui.theme import Theme
 from katrain.gui.widgets.panels import AnalysisToggle, CollapsablePanel
@@ -80,6 +81,7 @@ class ControlsPanel(BoxLayout):
         super(ControlsPanel, self).__init__(**kwargs)
         self.status_state = (None, -1e9, None)
         self.active_comment_node = None
+        self.explain_service = None
         self.last_timer_update = (None, 0, False)
         self.beep_start = 5.2
         self.timer_interval = 0.07
@@ -163,12 +165,6 @@ class ControlsPanel(BoxLayout):
             info += self.active_comment_node.comment(
                 teach=katrain.players_info[self.active_comment_node.player].being_taught, details=details
             )
-            if not lock_ai and move:
-                if getattr(self, "explain_service", None) is None:
-                    self.explain_service = ExplainService(katrain)
-                explanation = self.explain_service.explain(self.active_comment_node)
-                if explanation:
-                    info += "\n[b]讲解[/b]\n" + explanation + "\n"
 
         if self.active_comment_node.analysis_exists:
             self.stats.score = self.active_comment_node.format_score() or ""
@@ -184,6 +180,29 @@ class ControlsPanel(BoxLayout):
         self.graph.update_value(current_node)
         self.note.text = current_node.note
         self.info.text = info
+        self.update_explanation(lock_ai)
+
+    def update_explanation(self, lock_ai=False):
+        """讲解标签页：明玥式讲解 + 点击在棋盘上播放 AI 推荐变化。"""
+        node = self.active_comment_node
+        if not self.explain.active or node is None:
+            self.explain.text = ""
+            return
+        if lock_ai:
+            self.explain.text = i18n._("explain:locked")
+            return
+        if self.explain_service is None:
+            self.explain_service = ExplainService(self.katrain)
+        text, facts = self.explain_service.explain(node)
+        if not text:
+            self.explain.text = i18n._("explain:waiting") if node.move else ""
+            return
+        text = escape_markup(text)
+        if facts and not facts.is_best and facts.best_pv:
+            pv = facts.player + " ".join(facts.best_pv)
+            link = i18n._("explain:show pv").format(move=facts.best_move)
+            text += f"\n\n[u][ref={pv}][color={Theme.INFO_PV_COLOR}]{link}[/color][/ref][/u]"
+        self.explain.text = text
 
     def update_timer(self, _dt):
         game = self.katrain and self.katrain.game

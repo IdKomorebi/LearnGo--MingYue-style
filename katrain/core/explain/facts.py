@@ -48,6 +48,7 @@ class GroupChange:
     before: str
     after: str
     delta: float  # 从这块棋自己颜色看，安全度变化（-2..2）
+    stones: List[str] = field(default_factory=list)  # GTP 坐标，供棋盘高亮
 
 
 @dataclass
@@ -182,6 +183,7 @@ def extract_move_facts(
                         group_status(s_before),
                         group_status(s_after),
                         round(s_after - s_before, 2),
+                        sorted(coord_to_gtp(c) for c in stones),
                     )
                 )
         group_changes.sort(key=lambda g: -abs(g.delta) * g.size)

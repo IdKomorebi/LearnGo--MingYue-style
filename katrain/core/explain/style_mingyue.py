@@ -82,23 +82,16 @@ def render_mingyue(f: MoveFacts, black_name: str = "黑棋", white_name: str = "
         if g.before != g.after:
             lines.append(f"下完之后，{g.name}从“{g.before}”变成了“{g.after}”。")
 
-    # 2.5 为什么要下这里：和脱先比
-    if f.tenuki_value is not None and f.tenuki_reply:
-        opp_c = COLOR[opp]
+    # 2.5 为什么要下这里：和脱先比。只在对方的手段就在附近时才讲，
+    # 否则脱先的差距主要是“少下一手”的先手价值，和这手棋本身无关，讲了反而误导。
+    if f.tenuki_local and f.tenuki_reply:
         threat = f"，{f.tenuki_phrase}" if f.tenuki_phrase else ""
-        if f.tenuki_value >= 1.0:
-            lines.append(
-                f"这手价值约 {f.tenuki_value:.0f} 目：如果{COLOR[f.player]}脱先，{opp_c}会下{f.tenuki_reply}{threat}。"
-            )
-        else:
-            lines.append(
-                f"这手不算急：就算{COLOR[f.player]}脱先，{opp_c}最好也只是下{f.tenuki_reply}{threat}，差不到 1 目。"
-            )
+        lines.append(f"这手是急所：如果{COLOR[f.player]}不下这里，{COLOR[opp]}马上会下{f.tenuki_reply}{threat}。")
         for d in f.tenuki_fates[:1]:
             if d.actual != d.best:
-                lines.append(f"脱先的话，{d.name}会从“{d.best}”变成“{d.actual}”。")
-        if f.tenuki_value >= 1.0 and len(f.tenuki_steps) >= 3:
-            lines.append(f"脱先后的变化：{sequence_text(f.tenuki_steps[:5])}。")
+                lines.append(f"那样的话，{d.name}会从“{d.best}”变成“{d.actual}”。")
+        if len(f.tenuki_steps) >= 3:
+            lines.append(f"不下这里的变化：{sequence_text(f.tenuki_steps[:5])}。")
 
     # 3. AI 首选
     if not f.is_best:

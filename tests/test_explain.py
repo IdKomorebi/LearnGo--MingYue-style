@@ -99,4 +99,5 @@ def test_tenuki_result_shows_up_in_text():
     callbacks[0](fake, False)
     text_after, facts = service.explain(nodes[80])
     assert facts.tenuki_reply == "L12" and facts.tenuki_value == 8.0
-    assert "这手价值约 8 目：如果白脱先，黑会下L12" in text_after
+    assert facts.tenuki_local  # L12 离 M10 只有 3 路
+    assert "这手是急所：如果白不下这里，黑马上会下L12" in text_after

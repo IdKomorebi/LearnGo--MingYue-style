@@ -114,7 +114,8 @@ class MoveFacts:
     instinct_vs_played: Optional[float] = None  # 第一感比实战好多少目（负数=实战更好）
     instinct_phrase: str = ""
     # 脱先对比：如果落子方这手不下（停一手），对方会怎么下、落子方亏多少。用来讲“这手为什么要下”
-    tenuki_value: Optional[float] = None  # 这手比脱先好多少目（落子方视角）
+    tenuki_value: Optional[float] = None  # 这手比脱先好多少目（落子方视角）。含一手棋的先手价值，不是这手的“目数”
+    tenuki_local: bool = False  # 脱先后对方的最佳一手就在这手附近（3 路以内）：说明这里是急所
     tenuki_reply: str = ""  # 脱先后对方的最佳一手
     tenuki_phrase: str = ""  # 那一手干了什么
     tenuki_steps: List[Dict] = field(default_factory=list)
@@ -175,6 +176,13 @@ def _fate_diffs(
         )
     out.sort(key=lambda f: -abs(f.delta) * f.size)
     return out[:limit]
+
+
+LOCAL_DIST = 3  # “附近”：曼哈顿距离 3 以内
+
+
+def _dist(a: Coord, b: Coord) -> int:
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 
 def _region_diff(own_new, own_old, sg: int, size: int, threshold: float = 1.5, limit: int = 3) -> List[Dict]:
@@ -286,6 +294,7 @@ def extract_move_facts(
 
     # 脱先对比
     tenuki_value, tenuki_reply, tenuki_phrase, tenuki_steps, tenuki_fates = None, "", "", [], []
+    tenuki_local = False
     if tenuki and tenuki.get("rootInfo") and tenuki.get("moveInfos"):
         opp_ = "W" if player == "B" else "B"
         tenuki_value = round(score_after - sg * tenuki["rootInfo"]["scoreLead"], 1)
@@ -293,8 +302,15 @@ def extract_move_facts(
         tenuki_reply = t_best["move"]
         tenuki_phrase = analyze_move(board_before.copy(), opp_, gtp_to_coord(tenuki_reply, size)).phrase()
         tenuki_steps = describe_sequence(board_before, t_best["pv"][:pv_len], opp_)
-        if tenuki.get("ownership") and own_a:
-            tenuki_fates = _fate_diffs(board_before, player, None, tenuki["ownership"], own_a, size)
+        played_c, reply_c = gtp_to_coord(gtp, size), gtp_to_coord(tenuki_reply, size)
+        tenuki_local = bool(played_c and reply_c and _dist(played_c, reply_c) <= LOCAL_DIST)
+        if tenuki.get("ownership") and own_a and played_c:
+            near = [
+                d
+                for d in _fate_diffs(board_before, player, None, tenuki["ownership"], own_a, size, limit=5)
+                if any(_dist(gtp_to_coord(st, size), played_c) <= LOCAL_DIST for st in d.stones)
+            ]
+            tenuki_fates = near[:2]
 
     reply = sorted(after.get("moveInfos", []), key=lambda d: d["order"])
     reply_pv = reply[0]["pv"][:pv_len] if reply else []
@@ -343,6 +359,7 @@ def extract_move_facts(
         instinct_vs_played=instinct_vs_played,
         instinct_phrase=instinct_phrase,
         tenuki_value=tenuki_value,
+        tenuki_local=tenuki_local,
         tenuki_reply=tenuki_reply,
         tenuki_phrase=tenuki_phrase,
         tenuki_steps=tenuki_steps,

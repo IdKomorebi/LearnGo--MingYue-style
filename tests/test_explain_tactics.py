@@ -104,3 +104,27 @@ def test_real_game_move78_wedge():
     assert f79.best_steps[0]["label"] == "打吃"
     text = render_mingyue(f79, "AlphaGo", "李世石")
     assert "黑H12打吃 →" in text
+
+
+def test_real_game_tenuki_urgent_point():
+    """第 66 手白O14把被打吃的子长出来：不下的话黑马上在 O14 提子，讲解要说出这是急所。"""
+    import json
+    import os
+
+    here = os.path.dirname(__file__)
+    moves = json.load(open(os.path.join(here, "..", "tools", "mingyue", "g4_moves.json")))["moves"]
+    main, tenuki = {}, {}
+    for line in open(os.path.join(here, "data", "g4_katago_tenuki_120v.jsonl"), encoding="utf-8"):
+        d = json.loads(line)
+        if d["id"].startswith("tenuki"):
+            tenuki[int(d["id"][6:])] = d
+        else:
+            main[d["turnNumber"]] = d
+    f = extract_move_facts(moves, 65, main[65], main[66], tenuki=tenuki[65])
+    assert f.played_label == "长出" and f.tenuki_local and f.tenuki_reply == "O14"
+    assert "提掉白1子" in f.tenuki_phrase
+    text = render_mingyue(f, "AlphaGo", "李世石")
+    assert "这手是急所：如果白不下这里，黑马上会下O14" in text
+    # 第 62 手：白脱先的话黑的最佳不在附近，讲解不该硬说成急所
+    f62 = extract_move_facts(moves, 61, main[61], main[62], tenuki=tenuki[61])
+    assert not f62.tenuki_local and "急所" not in render_mingyue(f62)

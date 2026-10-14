@@ -32,7 +32,7 @@ by_turn = {}
 for line in open(args.analysis, encoding="utf-8"):
     if line.startswith("{"):
         d = json.loads(line)
-        if "rootInfo" in d and not d.get("isDuringSearch"):
+        if "rootInfo" in d and not d.get("isDuringSearch") and not d.get("id", "").startswith("tenuki"):
             by_turn[d["turnNumber"]] = d
 
 tenuki = {}

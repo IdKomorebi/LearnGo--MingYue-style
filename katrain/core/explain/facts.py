@@ -113,6 +113,12 @@ class MoveFacts:
     instinct_prior: float = 0.0
     instinct_vs_played: Optional[float] = None  # 第一感比实战好多少目（负数=实战更好）
     instinct_phrase: str = ""
+    # 脱先对比：如果落子方这手不下（停一手），对方会怎么下、落子方亏多少。用来讲“这手为什么要下”
+    tenuki_value: Optional[float] = None  # 这手比脱先好多少目（落子方视角）
+    tenuki_reply: str = ""  # 脱先后对方的最佳一手
+    tenuki_phrase: str = ""  # 那一手干了什么
+    tenuki_steps: List[Dict] = field(default_factory=list)
+    tenuki_fates: List[FateDiff] = field(default_factory=list)  # best=实战下完的状态，actual=脱先后的状态
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -193,9 +199,11 @@ def extract_move_facts(
     after: Dict,
     size: int = 19,
     pv_len: int = 6,
+    tenuki: Optional[Dict] = None,
 ) -> MoveFacts:
     """moves：整局 [[player, gtp], ...]；move_index：0 起，表示讲第 move_index+1 手。
-    before：落子前局面的分析；after：落子后局面的分析。"""
+    before：落子前局面的分析；after：落子后局面的分析。
+    tenuki：可选，落子前局面里落子方停一手（脱先）之后的分析，用来讲这手的价值。"""
     player, gtp = moves[move_index]
     sg = sign(player)
     board = Board(size)
@@ -276,6 +284,18 @@ def extract_move_facts(
             instinct_vs_played = round(sg * instinct["scoreLead"] - played_score, 1)
         instinct_phrase = analyze_move(board_before.copy(), player, gtp_to_coord(instinct["move"], size)).phrase()
 
+    # 脱先对比
+    tenuki_value, tenuki_reply, tenuki_phrase, tenuki_steps, tenuki_fates = None, "", "", [], []
+    if tenuki and tenuki.get("rootInfo") and tenuki.get("moveInfos"):
+        opp_ = "W" if player == "B" else "B"
+        tenuki_value = round(score_after - sg * tenuki["rootInfo"]["scoreLead"], 1)
+        t_best = sorted(tenuki["moveInfos"], key=lambda d: d["order"])[0]
+        tenuki_reply = t_best["move"]
+        tenuki_phrase = analyze_move(board_before.copy(), opp_, gtp_to_coord(tenuki_reply, size)).phrase()
+        tenuki_steps = describe_sequence(board_before, t_best["pv"][:pv_len], opp_)
+        if tenuki.get("ownership") and own_a:
+            tenuki_fates = _fate_diffs(board_before, player, None, tenuki["ownership"], own_a, size)
+
     reply = sorted(after.get("moveInfos", []), key=lambda d: d["order"])
     reply_pv = reply[0]["pv"][:pv_len] if reply else []
     opp = "W" if player == "B" else "B"
@@ -322,4 +342,9 @@ def extract_move_facts(
         instinct_prior=round(instinct.get("prior", 0.0), 4),
         instinct_vs_played=instinct_vs_played,
         instinct_phrase=instinct_phrase,
+        tenuki_value=tenuki_value,
+        tenuki_reply=tenuki_reply,
+        tenuki_phrase=tenuki_phrase,
+        tenuki_steps=tenuki_steps,
+        tenuki_fates=tenuki_fates,
     )

@@ -249,6 +249,7 @@
         "enabled": true,
         "llm": false,
         "model": "claude-opus-5-5",
-        "key_move_visits": 1000
+        "key_move_visits": 1000,
+        "tenuki_visits": 300
     }
 }

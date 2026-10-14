@@ -27,4 +27,5 @@ def facts_from_game_node(node) -> Optional[MoveFacts]:
         return None
     moves = [[m.player, m.gtp()] for n in node.nodes_from_root for m in n.moves]
     size = node.board_size[0]
-    return extract_move_facts(moves, len(moves) - 1, before, after, size=size)
+    tenuki = getattr(node, "explain_tenuki", None)
+    return extract_move_facts(moves, len(moves) - 1, before, after, size=size, tenuki=tenuki)

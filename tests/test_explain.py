@@ -56,16 +56,48 @@ def test_service_renders_in_katrain():
 def test_key_move_gets_deeper_analysis():
     nodes, analyses, _ = load_game_with_analysis()
     katrain = KaTrainBase(force_package_config=True, debug_level=0)
-    requested = []
+    requested, tenuki = [], []
 
     class FakeEngine:
-        def request_analysis(self, node, callback, visits=None, **kwargs):
-            requested.append((node.depth, visits))
+        def request_analysis(self, node, callback, visits=None, next_move=None, ownership=None, **kwargs):
+            if next_move is not None:  # 脱先分析：落子前局面 + 落子方停一手
+                tenuki.append((node.depth, next_move.gtp(), next_move.player, ownership, callback))
+            else:
+                requested.append((node.depth, visits))
 
     katrain.engine = FakeEngine()
     service = ExplainService(katrain)
     _, facts = service.explain(nodes[78])  # 78 手是妙手（AI 第一感很低），只算了 60 步
     assert facts.surprise
     assert sorted(requested) == [(77, 1000), (78, 1000)]
+    assert [t[:4] for t in tenuki] == [(77, "pass", "W", True)]
     service.explain(nodes[78])  # 同一节点只加算一次
-    assert len(requested) == 2
+    assert len(requested) == 2 and len(tenuki) == 1
+
+
+def test_tenuki_result_shows_up_in_text():
+    nodes, analyses, _ = load_game_with_analysis()
+    katrain = KaTrainBase(force_package_config=True, debug_level=0)
+    callbacks = []
+
+    class FakeEngine:
+        def request_analysis(self, node, callback, next_move=None, **kwargs):
+            if next_move is not None:
+                callbacks.append(callback)
+
+    katrain.engine = FakeEngine()
+    katrain.update_state = lambda *a, **k: None
+    service = ExplainService(katrain)
+    text_before, _ = service.explain(nodes[80])
+    assert "脱先" not in text_before and len(callbacks) == 1
+    # 假装白棋在 80 手前脱先后，黑的最佳是 L12（打吃白 L11），黑多 8 目
+    fake = {
+        "rootInfo": {"scoreLead": analyses[80]["rootInfo"]["scoreLead"] + 8, "winrate": 0.97, "visits": 300},
+        "moveInfos": [{"move": "L12", "order": 0, "visits": 100, "scoreLead": 0.0, "prior": 0.5, "pv": ["L12", "M10"]}],
+        "ownership": analyses[80]["ownership"],
+    }
+    callbacks[0](fake, False)
+    text_after, facts = service.explain(nodes[80])
+    assert facts.tenuki_reply == "L12" and facts.tenuki_value == 8.0
+    assert facts.tenuki_local  # L12 离 M10 只有 3 路
+    assert "这手是急所：如果白不下这里，黑马上会下L12" in text_after

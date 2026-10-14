@@ -24,6 +24,7 @@ ap.add_argument("--llm", action="store_true")
 ap.add_argument("--show-prompt", action="store_true")
 ap.add_argument("--facts", action="store_true")
 ap.add_argument("--names", nargs=2, default=["黑棋", "白棋"])
+ap.add_argument("--tenuki", help="脱先分析的 jsonl（id 为 tenuki<落子前手数>）")
 args = ap.parse_args()
 
 moves = json.load(open(args.moves))["moves"]
@@ -31,14 +32,22 @@ by_turn = {}
 for line in open(args.analysis, encoding="utf-8"):
     if line.startswith("{"):
         d = json.loads(line)
-        if "rootInfo" in d and not d.get("isDuringSearch"):
+        if "rootInfo" in d and not d.get("isDuringSearch") and not d.get("id", "").startswith("tenuki"):
             by_turn[d["turnNumber"]] = d
+
+tenuki = {}
+if args.tenuki:
+    for line in open(args.tenuki, encoding="utf-8"):
+        if line.startswith("{"):
+            d = json.loads(line)
+            if d.get("id", "").startswith("tenuki") and "rootInfo" in d:
+                tenuki[int(d["id"][6:])] = d
 
 for n in range(max(args.start, 1), min(args.end, len(moves)) + 1):
     t = n - 1
     if t not in by_turn or t + 1 not in by_turn:
         continue
-    f = extract_move_facts(moves, t, by_turn[t], by_turn[t + 1])
+    f = extract_move_facts(moves, t, by_turn[t], by_turn[t + 1], tenuki=tenuki.get(t))
     print("=" * 60)
     if args.facts:
         print(json.dumps(f.to_dict(), ensure_ascii=False))

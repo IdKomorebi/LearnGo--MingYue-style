@@ -1,45 +1,28 @@
-"""规则模板版“明玥式”讲解。离线、零延迟、不会胡编，作为 LLM 版的兜底和草稿。
+"""规则模板版讲解。离线、零延迟、不会胡编，也是 LLM 版的草稿和兜底。
 
-风格要素（来自明玥谈棋公开视频标题和简介的归纳，见方案文档）：
-  1. 先抛一个有冲击力的“标题句”，四字短语、对仗、夸张修辞；
-  2. 把棋手当角色讲：他想干什么、为什么这么下；
-  3. 用 AI 当“裁判”揭晓答案，数字口语化，制造反转；
-  4. 摆出正解变化，讲清楚差在哪；
-  5. 用一句接地气的金句/段位梗收尾。
+v0.3 起的原则：每一句都要带具体的棋盘信息（哪块棋、哪个点、局部发生了什么），
+没有内容就不说。固定的标题库和收尾金句已经删掉，明玥式的口吻交给 LLM 版去做。
+
+讲解顺序：
+  1. 一句话结论：这手是什么动作，AI 怎么评价，亏多少；
+  2. 这手在局部干了什么（打吃/切断/连接/棋形），下完哪块棋的死活变了；
+  3. AI 首选干了什么，正解变化每一步的意思；
+  4. 差在哪里：两种下法之后，哪块棋的命运不同、哪片地差了几目；
+  5. 对手接下来最好的手段；
+  6. 形势数字放最后，一行带过。
 """
 
-import random
 from typing import List
 
 from katrain.core.explain.facts import MoveFacts
+from katrain.core.explain.tactics import sequence_text
 
 COLOR = {"B": "黑", "W": "白"}
-
-TITLES = {
-    "surprise": ["冷门妙手，AI 都没想到！", "神来之笔，第一感根本看不见！", "一手挖穿，石破天惊！"],
-    "good": ["稳如老狗，本手本手！", "滴水不漏，AI 点头。", "这手棋，挑不出毛病。"],
-    "small": ["不是最佳，但也不算错。", "差之毫厘，还在可控范围。"],
-    "slack": ["有点缓了！", "温吞水一手，机会悄悄溜走。"],
-    "doubt": ["这手有问题！", "疑问手出现，局面开始松动。"],
-    "bad": ["恶手！形势急转直下！", "一步踏空，满盘皆惊！"],
-    "blunder": ["败着！AI 看了都得吐血！", "一手崩盘，大龙说没就没！", "史诗级翻车现场！"],
-}
-VERDICT_KEY = {"好棋": "good", "小亏": "small", "缓手": "slack", "疑问手": "doubt", "恶手": "bad", "败着": "blunder"}
-
-CLOSERS = {
-    "surprise": ["这种棋，第一感是看不到的，得算。会算的人，才配得上这一手。", "看懂这手棋，你的棋力就上了一个台阶。"],
-    "good": ["本手，就是最强的手。", "朴素，但是正确，这就是高手。"],
-    "small": ["这点差别，业余比赛里根本不算事，但高手对局里，细节就是胜负。"],
-    "slack": ["缓一手，对手就多一口气。下棋，最怕温吞。"],
-    "doubt": ["这里多想十秒，局面就完全不一样。"],
-    "bad": ["形势判断错了，后面怎么算都是白算。"],
-    "blunder": ["一着不慎，满盘皆输，围棋就是这么残酷。"],
-}
 
 
 def winrate_phrase(wr: float) -> str:
     if wr >= 0.95:
-        return "基本锁定胜局"
+        return "基本胜定"
     if wr >= 0.8:
         return "大优"
     if wr >= 0.62:
@@ -47,91 +30,109 @@ def winrate_phrase(wr: float) -> str:
     if wr >= 0.55:
         return "稍好"
     if wr > 0.45:
-        return "五五开，难解难分"
+        return "五五开"
     if wr > 0.38:
         return "稍苦"
     if wr > 0.2:
         return "明显落后"
     if wr > 0.05:
         return "大势已去"
-    return "几乎没机会了"
-
-
-def points_phrase(p: float) -> str:
-    p = abs(p)
-    if p < 1:
-        return "不到一目"
-    if p < 3:
-        return f"{p:.0f} 目左右的小账"
-    if p < 8:
-        return f"{p:.0f} 目，差不多一个贴目"
-    if p < 15:
-        return f"{p:.0f} 目，相当于一个大场"
-    return f"{p:.0f} 目，等于一整块棋"
+    return "几乎没机会"
 
 
 def _pct(x: float) -> str:
     return f"{x * 100:.0f}%"
 
 
-def render_mingyue(f: MoveFacts, black_name: str = "黑棋", white_name: str = "白棋") -> str:
-    rng = random.Random(f.move_number)  # 同一手每次讲法一样，方便测试
-    who = black_name if f.player == "B" else white_name
-    key = "surprise" if f.surprise else VERDICT_KEY[f.verdict]
-    if key == "good" and not f.is_best:
-        key = "small"  # 目数没亏多少，但不是 AI 的选择，标题别夸
-    lines: List[str] = [f"【第 {f.move_number} 手】{rng.choice(TITLES[key])}"]
+def _signed(x: float) -> str:
+    return f"{x:+.1f}"
 
-    # 1. 角色视角：他下了哪儿
-    lines.append(
-        f"{who}（{COLOR[f.player]}）这手下在{f.move_desc}（{f.move}）。"
-        + (f"一口气提掉 {f.captured} 子！" if f.captured else "")
-    )
 
-    # 2. AI 当裁判
-    swing = f.winrate_after - f.winrate_before
-    lines.append(
-        f"AI 怎么看？落子前{COLOR[f.player]}方胜率 {_pct(f.winrate_before)}（{winrate_phrase(f.winrate_before)}），"
-        f"下完 {_pct(f.winrate_after)}（{winrate_phrase(f.winrate_after)}）"
-        + ("。" if abs(swing) < 0.03 else f"，一手棋{'涨' if swing > 0 else '掉'}了 {abs(swing) * 100:.0f} 个百分点！")
-    )
-    if f.points_lost >= 0.5:
-        lines.append(f"按目数算，这手亏了 {points_phrase(f.points_lost)}。")
-
+def _headline(f: MoveFacts) -> str:
+    label = f" {f.played_label}" if f.played_label else ""
+    head = f"【第 {f.move_number} 手 {COLOR[f.player]}{f.move}{label}】"
     if f.surprise and f.played_prior is not None:
-        lines.append(f"最妙的是：AI 的第一感只给这手 {_pct(f.played_prior)} 的概率，是靠算出来的，不是看出来的。")
+        return head + f"好棋，而且 AI 的第一感只给它 {_pct(f.played_prior)}，是算出来的一手"
+    if f.move == f.best_move:
+        return head + "正是 AI 的首选"
+    if f.is_best or f.points_lost < 0.5:
+        diff = "目数上几乎一样" if f.points_lost < 0.1 else f"只差 {f.points_lost:.1f} 目"
+        return head + f"和 AI 首选 {f.best_move} 差不多，{diff}"
+    return head + f"{f.verdict}，比 AI 首选 {f.best_move} 亏约 {f.points_lost:.1f} 目"
 
-    # 3. 正解与区别
-    if not f.is_best:
-        rank = f"AI 候选里排第 {f.played_rank}" if f.played_rank else "AI 候选里根本没有这手"
-        lines.append(
-            f"{rank}。AI 想下的是{f.best_desc}（{f.best_move}），后续大致是：{' → '.join(f.best_pv_desc[:5])}。"
+
+def render_mingyue(f: MoveFacts, black_name: str = "黑棋", white_name: str = "白棋") -> str:
+    name = black_name if f.player == "B" else white_name
+    who = COLOR[f.player] if name in ("黑棋", "白棋", "") else f"{name}（{COLOR[f.player]}）"
+    opp = "W" if f.player == "B" else "B"
+    lines: List[str] = [_headline(f)]
+
+    # 2. 这手干了什么
+    what = f.played_phrase or "没有直接接触对方棋子"
+    lines.append(f"{who}下在{f.move_desc}{f.move}：{what}。")
+    if f.surprise and f.instinct_move and f.instinct_move != f.move:
+        alt = f"（{f.instinct_phrase}）" if f.instinct_phrase else ""
+        worse = (
+            f"，但那样比实战差 {f.instinct_vs_played * -1:.1f} 目"
+            if f.instinct_vs_played is not None and f.instinct_vs_played <= -0.5
+            else ""
         )
-    elif f.visits < 200:
-        pass  # 算得太浅，“唯一的一手 / 哪里都行”这种判断不可靠，干脆不说
-    elif f.near_best_count >= 4 and not f.surprise:
-        lines.append(f"这里其实有 {f.near_best_count} 个点价值差不多，属于“哪里都行”的局面，选这手没毛病。")
-    elif f.near_best_count <= 1 and f.is_best:
-        lines.append("而且这几乎是唯一的一手，别的下法都要明显吃亏。")
-
-    # 4. 棋理：哪块棋、哪片地变了
+        lines.append(f"AI 的第一感其实是{f.instinct_move}{alt}，概率 {_pct(f.instinct_prior)}{worse}。")
     for g in f.group_changes[:2]:
-        side = "自己" if g.color == f.player else "对方"
-        lines.append(
-            f"关键在{g.region}那块{COLOR[g.color]}棋（{side}的，{g.size} 子）：从“{g.before}”变成了“{g.after}”。"
-        )
-    gains = [s for s in f.territory_swings if abs(s["points"]) >= 3]
-    if gains and not f.group_changes:
-        s = gains[0]
-        lines.append(
-            f"地盘上，{s['region']}一带{'多出' if s['points'] > 0 else '丢掉'}了大约 {abs(s['points']):.0f} 目。"
-        )
+        if g.before != g.after:
+            lines.append(f"下完之后，{g.name}从“{g.before}”变成了“{g.after}”。")
 
-    if f.reply_pv_desc and not f.is_best:
-        lines.append(f"对手的最佳应对：{' → '.join(f.reply_pv_desc[:4])}。")
+    # 2.5 为什么要下这里：和脱先比。只在对方的手段就在附近时才讲，
+    # 否则脱先的差距主要是“少下一手”的先手价值，和这手棋本身无关，讲了反而误导。
+    if f.tenuki_local and f.tenuki_reply:
+        threat = f"，{f.tenuki_phrase}" if f.tenuki_phrase else ""
+        lines.append(f"这手是急所：如果{COLOR[f.player]}不下这里，{COLOR[opp]}马上会下{f.tenuki_reply}{threat}。")
+        for d in f.tenuki_fates[:1]:
+            if d.actual != d.best:
+                lines.append(f"那样的话，{d.name}会从“{d.best}”变成“{d.actual}”。")
+        if len(f.tenuki_steps) >= 3:
+            lines.append(f"不下这里的变化：{sequence_text(f.tenuki_steps[:5])}。")
 
-    # 5. 收尾金句
-    lines.append(rng.choice(CLOSERS[key]))
+    # 3. AI 首选
+    if not f.is_best:
+        does = f"：{f.best_phrase}" if f.best_phrase else ""
+        lines.append(f"AI 首选是{f.best_desc}{f.best_move}{does}。")
+        if len(f.best_steps) >= 2:
+            lines.append(f"AI 的变化：{sequence_text(f.best_steps)}。")
+
+    # 4. 差在哪里
+    for d in f.fate_diffs:
+        if d.actual == d.best:
+            change = "安全程度明显不同"
+            lines.append(f"差距落在{d.name}：两种下法之后它{change}。")
+        else:
+            lines.append(f"差距落在{d.name}：按 AI 首选它是“{d.best}”，实战下完是“{d.actual}”。")
+    if f.loss_regions and not f.is_best and f.points_lost >= 1.5:
+        # 区域差是两张 ownership 图相减，各区域会互相抵消，单个区域的数字可能比总目损大，所以只说位置
+        r = f.loss_regions[0]
+        if r["points"] > 0:
+            lines.append(f"从地盘看，两种下法的差别主要在{r['region']}。")
+    if not f.fate_diffs and not f.loss_regions:
+        gains = [s for s in f.territory_swings if abs(s["points"]) >= 3]
+        if gains:
+            s = gains[0]
+            lines.append(
+                f"这手下完，{s['region']}一带{COLOR[f.player]}方{'多了' if s['points'] > 0 else '少了'}约 {abs(s['points']):.0f} 目。"
+            )
+
+    # 5. 对手接下来
+    if f.reply_steps:
+        first = f.reply_steps[0]
+        does = f"，{first['phrase']}" if first["phrase"] else ""
+        lines.append(f"轮到{COLOR[opp]}，AI 认为最好下{first['move']}{does}。")
+        if len(f.reply_steps) >= 3:
+            lines.append(f"后续大致是：{sequence_text(f.reply_steps[:5])}。")
+
+    # 6. 形势
+    lines.append(
+        f"形势：{COLOR[f.player]}方胜率 {_pct(f.winrate_before)} → {_pct(f.winrate_after)}（{winrate_phrase(f.winrate_after)}），"
+        f"目差 {_signed(f.score_before)} → {_signed(f.score_after)}。"
+    )
     if f.visits < 100:
-        lines.append(f"（AI 这次只算了 {f.visits} 步，判断比较浅，仅供参考。）")
+        lines.append(f"（AI 只算了 {f.visits} 步，以上结论偏浅。）")
     return "\n".join(lines)

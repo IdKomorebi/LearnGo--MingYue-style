@@ -6,6 +6,13 @@ import sys
 
 os.environ["KCFG_KIVY_LOG_LEVEL"] = os.environ.get("KCFG_KIVY_LOG_LEVEL", "warning")
 
+# Kivy 自己的配置和日志（默认 ~/.kivy）也放进讲解版的数据目录，不和原版 KaTrain 共用
+from katrain.core.constants import DATA_FOLDER  # 只依赖 os，必须在 import kivy 之前
+
+if "KIVY_HOME" not in os.environ:
+    os.environ["KIVY_HOME"] = os.path.join(os.path.expanduser(DATA_FOLDER), "kivy")
+    os.makedirs(os.environ["KIVY_HOME"], exist_ok=True)
+
 from kivy.utils import platform as kivy_platform
 
 if kivy_platform == "win":
@@ -888,7 +895,7 @@ class KaTrainApp(App):
     def build(self):
         self.icon = ICON  # how you're supposed to set an icon
 
-        self.title = f"KaTrain v{VERSION}"
+        self.title = f"KaTrain v{VERSION} 明玥讲解版"  # 和原版 KaTrain 的窗口区分开
 
         kv_file = find_package_resource("katrain/gui.kv")
         popup_kv_file = find_package_resource("katrain/popups.kv")

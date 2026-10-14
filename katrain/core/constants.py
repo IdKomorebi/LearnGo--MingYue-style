@@ -1,9 +1,13 @@
+import os
+
 PROGRAM_NAME = "KaTrain"
 VERSION = "1.20.0"
 HOMEPAGE = "https://github.com/sanderland/katrain"
 CONFIG_MIN_VERSION = "1.20.0"  # keep in sync with config.json
 ANALYSIS_FORMAT_VERSION = "1.0"
-DATA_FOLDER = "~/.katrain"
+# 讲解版用自己的数据目录，和同一台电脑上的原版 KaTrain（~/.katrain）互不影响：
+# 设置、KataGo 调优缓存、主题、下载的模型都分开存。可用环境变量 KATRAIN_DATA_FOLDER 改到别处。
+DATA_FOLDER = os.environ.get("KATRAIN_DATA_FOLDER") or "~/.katrain-mingyue"
 
 
 OUTPUT_ERROR = -1

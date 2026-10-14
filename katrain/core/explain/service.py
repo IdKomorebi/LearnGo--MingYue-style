@@ -3,6 +3,8 @@
 import threading
 from typing import Optional, Tuple
 
+from pysgf import Move
+
 from katrain.core.constants import PRIORITY_EXTRA_ANALYSIS
 from katrain.core.explain.adapters import facts_from_game_node
 from katrain.core.explain.facts import MoveFacts
@@ -31,6 +33,7 @@ class ExplainService:
         if facts is None:
             return "", None
         self._maybe_deepen(node, facts)
+        self._maybe_tenuki(node)
         cached = getattr(node, "explanation_llm", None)
         if cached and getattr(node, "explanation_llm_visits", 0) >= facts.visits:
             return cached, facts
@@ -52,6 +55,28 @@ class ExplainService:
         for n in (node.parent, node):
             if n.root_visits < min_visits:
                 n.analyze(engine, visits=min_visits, priority=PRIORITY_EXTRA_ANALYSIS, time_limit=False)
+
+    def _maybe_tenuki(self, node):
+        """补算“这手如果不下（脱先）会怎样”：落子前局面里落子方停一手，看对方最好的手段。每个节点算一次。"""
+        engine = getattr(self.katrain, "engine", None)
+        if not engine or getattr(node, "explain_tenuki_requested", False) or not node.move or node.move.is_pass:
+            return
+        node.explain_tenuki_requested = True
+
+        def done(analysis, partial_result):
+            if not partial_result:
+                node.explain_tenuki = analysis
+                self.katrain.update_state()
+
+        engine.request_analysis(
+            node.parent,
+            callback=done,
+            visits=self.katrain.config("explain/tenuki_visits", 300),
+            priority=PRIORITY_EXTRA_ANALYSIS,
+            ownership=True,
+            next_move=Move(None, player=node.move.player),
+            include_policy=False,
+        )
 
     def _llm(self, node, facts, names):
         text = explain_with_claude(facts, *names, model=self.katrain.config("explain/model", "claude-opus-5-5"))

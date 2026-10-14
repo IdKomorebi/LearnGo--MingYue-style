@@ -27,6 +27,11 @@ class Board:
         self.size = size
         self.stones: Dict[Coord, str] = {}
 
+    def copy(self) -> "Board":
+        b = Board(self.size)
+        b.stones = dict(self.stones)
+        return b
+
     def neighbours(self, c: Coord) -> List[Coord]:
         x, y = c
         return [

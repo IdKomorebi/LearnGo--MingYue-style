@@ -8,8 +8,9 @@
 from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Sequence
 
-from katrain.core.explain.board import Board, coord_to_gtp, gtp_to_coord, ownership_index
+from katrain.core.explain.board import Board, Coord, coord_to_gtp, gtp_to_coord, ownership_index
 from katrain.core.explain.geometry import describe_point, region_of, summarize_region
+from katrain.core.explain.tactics import analyze_move, describe_sequence, group_ref
 
 # 和 KaTrain 默认 trainer/eval_thresholds 对齐：[12, 6, 3, 1.5, 0.5, 0]
 VERDICTS = [(12, "败着"), (6, "恶手"), (3, "疑问手"), (1.5, "缓手"), (0.5, "小亏"), (-1e9, "好棋")]
@@ -49,6 +50,20 @@ class GroupChange:
     after: str
     delta: float  # 从这块棋自己颜色看，安全度变化（-2..2）
     stones: List[str] = field(default_factory=list)  # GTP 坐标，供棋盘高亮
+    name: str = ""  # “白L11一子”
+
+
+@dataclass
+class FateDiff:
+    """同一块棋，在“实战”和“AI 首选”两种下法之后的命运对比。"""
+
+    color: str
+    name: str
+    size: int
+    stones: List[str]
+    actual: str  # 实战后的状态
+    best: str  # 按 AI 首选下之后的状态
+    delta: float  # 从这块棋自己颜色看：AI 首选比实战好多少（-2..2）
 
 
 @dataclass
@@ -83,6 +98,28 @@ class MoveFacts:
     reply_pv_desc: List[str] = field(default_factory=list)
     score_stdev: Optional[float] = None
     visits: int = 0
+    # 战术层：局部到底发生了什么（全部由棋盘计算，不依赖 AI）
+    played_label: str = ""  # “挖”“打吃”“长”……
+    played_phrase: str = ""  # “挖进黑K11一子和黑M11等4子中间”
+    best_label: str = ""
+    best_phrase: str = ""
+    best_steps: List[Dict] = field(default_factory=list)  # [{player, move, label, phrase}]
+    reply_steps: List[Dict] = field(default_factory=list)
+    # 亏在哪里：实战 vs AI 首选，两种下法之后每块棋的命运、每片区域的归属差
+    fate_diffs: List[FateDiff] = field(default_factory=list)
+    loss_regions: List[Dict] = field(default_factory=list)  # [{region, points}]，落子方视角，正数=首选更好
+    # AI 的“第一感”（policy 最高的候选）：用来讲“直觉 vs 计算”的反转
+    instinct_move: str = ""
+    instinct_prior: float = 0.0
+    instinct_vs_played: Optional[float] = None  # 第一感比实战好多少目（负数=实战更好）
+    instinct_phrase: str = ""
+    # 脱先对比：如果落子方这手不下（停一手），对方会怎么下、落子方亏多少。用来讲“这手为什么要下”
+    tenuki_value: Optional[float] = None  # 这手比脱先好多少目（落子方视角）。含一手棋的先手价值，不是这手的“目数”
+    tenuki_local: bool = False  # 脱先后对方的最佳一手就在这手附近（3 路以内）：说明这里是急所
+    tenuki_reply: str = ""  # 脱先后对方的最佳一手
+    tenuki_phrase: str = ""  # 那一手干了什么
+    tenuki_steps: List[Dict] = field(default_factory=list)
+    tenuki_fates: List[FateDiff] = field(default_factory=list)  # best=实战下完的状态，actual=脱先后的状态
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -111,6 +148,58 @@ def _pv_desc(pv: Sequence[str], first_player: str, size: int) -> List[str]:
     return out
 
 
+def _avg_status(stones, color: str, own: Sequence[float], size: int) -> float:
+    cs = sign(color)
+    return sum(cs * own[ownership_index(s, size)] for s in stones) / len(stones)
+
+
+def _fate_diffs(
+    board: Board, player: str, played: Optional[Coord], own_actual, own_best, size: int, limit: int = 2
+) -> List[FateDiff]:
+    """实战局面上的每块棋，比较两种下法之后的 ownership：只挑“没下首选所以吃亏”的棋块。
+    刚下的那颗子不参与平均（按首选下时它根本不存在）。"""
+    out = []
+    sg = sign(player)
+    for color, stones, _ in board.groups():
+        old = [s for s in stones if s != played]
+        if not old:
+            continue
+        sa = _avg_status(old, color, own_actual, size)
+        sb = _avg_status(old, color, own_best, size)
+        d = sb - sa
+        loss = d if sign(color) == sg else -d  # 落子方视角：首选比实战好多少
+        if loss < 0.4 or (len(old) < 2 and loss < 0.8):
+            continue
+        ref = group_ref(board, stones)
+        out.append(
+            FateDiff(color, ref.name(), len(stones), ref.stones, group_status(sa), group_status(sb), round(d, 2))
+        )
+    out.sort(key=lambda f: -abs(f.delta) * f.size)
+    return out[:limit]
+
+
+LOCAL_DIST = 3  # “附近”：曼哈顿距离 3 以内
+
+
+def _dist(a: Coord, b: Coord) -> int:
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def _region_diff(own_new, own_old, sg: int, size: int, threshold: float = 1.5, limit: int = 3) -> List[Dict]:
+    """两张 ownership 图按区域求差（落子方视角），大约就是各区域的目数变化。"""
+    by_region: Dict[str, float] = {}
+    for y in range(size):
+        for x in range(size):
+            i = ownership_index((x, y), size)
+            r = region_of((x, y), size)
+            by_region[r] = by_region.get(r, 0.0) + sg * (own_new[i] - own_old[i])
+    return [
+        {"region": r, "points": round(v, 1)}
+        for r, v in sorted(by_region.items(), key=lambda kv: -abs(kv[1]))
+        if abs(v) >= threshold
+    ][:limit]
+
+
 def extract_move_facts(
     moves: Sequence[Sequence[str]],
     move_index: int,
@@ -118,16 +207,20 @@ def extract_move_facts(
     after: Dict,
     size: int = 19,
     pv_len: int = 6,
+    tenuki: Optional[Dict] = None,
 ) -> MoveFacts:
     """moves：整局 [[player, gtp], ...]；move_index：0 起，表示讲第 move_index+1 手。
-    before：落子前局面的分析；after：落子后局面的分析。"""
+    before：落子前局面的分析；after：落子后局面的分析。
+    tenuki：可选，落子前局面里落子方停一手（脱先）之后的分析，用来讲这手的价值。"""
     player, gtp = moves[move_index]
     sg = sign(player)
     board = Board(size)
     for p, m in moves[:move_index]:
         board.play(p, gtp_to_coord(m, size))
     stones_before = dict(board.stones)
-    captured = board.play(player, gtp_to_coord(gtp, size))
+    board_before = board.copy()
+    played_t = analyze_move(board, player, gtp_to_coord(gtp, size))
+    captured = played_t.captured
 
     rb, ra = before["rootInfo"], after["rootInfo"]
     score_before, score_after = sg * rb["scoreLead"], sg * ra["scoreLead"]
@@ -144,28 +237,28 @@ def extract_move_facts(
     is_best = gtp == best["move"] or points_lost <= 0.3
 
     # 地盘变化：ownership 差（落子方视角），按区域累加
-    swings = []
     own_b, own_a = before.get("ownership"), after.get("ownership")
-    if own_b and own_a:
-        by_region: Dict[str, float] = {}
-        for y in range(size):
-            for x in range(size):
-                i = ownership_index((x, y), size)
-                d = sg * (own_a[i] - own_b[i])
-                r = region_of((x, y), size)
-                by_region[r] = by_region.get(r, 0.0) + d
-        swings = [
-            {"region": r, "points": round(v, 1)}
-            for r, v in sorted(by_region.items(), key=lambda kv: -abs(kv[1]))
-            if abs(v) >= 1.5
-        ][:3]
+    swings = _region_diff(own_a, own_b, sg, size) if own_b and own_a else []
+
+    # 正解：首选这手在局部干什么，以及它的变化图每一步的意思
+    best_t = analyze_move(board_before.copy(), player, gtp_to_coord(best["move"], size))
+    best_steps = describe_sequence(board_before, best["pv"][:pv_len], player)
+
+    # 亏在哪里：首选的 ownership vs 实战的 ownership（KaTrain 实时分析里每个候选都带 ownership）
+    played_info = next((d for d in cands if d["move"] == gtp), None)
+    own_actual = (played_info or {}).get("ownership") or own_a
+    own_best = best.get("ownership")
+    fate_diffs, loss_regions = [], []
+    if own_actual and own_best and best["move"] != gtp:
+        fate_diffs = _fate_diffs(board, player, gtp_to_coord(gtp, size), own_actual, own_best, size)
+        loss_regions = _region_diff(own_best, own_actual, sg, size, threshold=1.0, limit=2)
 
     # 棋块死活变化
     group_changes = []
     if own_b and own_a:
         for color, stones, libs in board.groups():
             old = [s for s in stones if stones_before.get(s) == color]
-            if len(stones) < 3 or not old:
+            if len(stones) < 2 or not old:
                 continue
             cs = sign(color)
             s_before = sum(cs * own_b[ownership_index(s, size)] for s in old) / len(old)
@@ -184,14 +277,45 @@ def extract_move_facts(
                         group_status(s_after),
                         round(s_after - s_before, 2),
                         sorted(coord_to_gtp(c) for c in stones),
+                        group_ref(board, stones).name(),
                     )
                 )
         group_changes.sort(key=lambda g: -abs(g.delta) * g.size)
         group_changes = group_changes[:3]
 
+    # 第一感
+    instinct = max(cands, key=lambda d: d.get("prior", 0.0))
+    instinct_vs_played, instinct_phrase = None, ""
+    if instinct["move"] != gtp:
+        played_score = sg * played_info["scoreLead"] if played_info else score_after
+        if instinct.get("visits", 0) >= 2:
+            instinct_vs_played = round(sg * instinct["scoreLead"] - played_score, 1)
+        instinct_phrase = analyze_move(board_before.copy(), player, gtp_to_coord(instinct["move"], size)).phrase()
+
+    # 脱先对比
+    tenuki_value, tenuki_reply, tenuki_phrase, tenuki_steps, tenuki_fates = None, "", "", [], []
+    tenuki_local = False
+    if tenuki and tenuki.get("rootInfo") and tenuki.get("moveInfos"):
+        opp_ = "W" if player == "B" else "B"
+        tenuki_value = round(score_after - sg * tenuki["rootInfo"]["scoreLead"], 1)
+        t_best = sorted(tenuki["moveInfos"], key=lambda d: d["order"])[0]
+        tenuki_reply = t_best["move"]
+        tenuki_phrase = analyze_move(board_before.copy(), opp_, gtp_to_coord(tenuki_reply, size)).phrase()
+        tenuki_steps = describe_sequence(board_before, t_best["pv"][:pv_len], opp_)
+        played_c, reply_c = gtp_to_coord(gtp, size), gtp_to_coord(tenuki_reply, size)
+        tenuki_local = bool(played_c and reply_c and _dist(played_c, reply_c) <= LOCAL_DIST)
+        if tenuki.get("ownership") and own_a and played_c:
+            near = [
+                d
+                for d in _fate_diffs(board_before, player, None, tenuki["ownership"], own_a, size, limit=5)
+                if any(_dist(gtp_to_coord(st, size), played_c) <= LOCAL_DIST for st in d.stones)
+            ]
+            tenuki_fates = near[:2]
+
     reply = sorted(after.get("moveInfos", []), key=lambda d: d["order"])
     reply_pv = reply[0]["pv"][:pv_len] if reply else []
     opp = "W" if player == "B" else "B"
+    reply_steps = describe_sequence(board, reply_pv, opp)
     return MoveFacts(
         move_number=move_index + 1,
         player=player,
@@ -222,4 +346,22 @@ def extract_move_facts(
         reply_pv_desc=_pv_desc(reply_pv, opp, size),
         score_stdev=round(ra.get("scoreStdev", 0.0), 1) if "scoreStdev" in ra else None,
         visits=rb.get("visits", 0),
+        played_label=played_t.label(),
+        played_phrase=played_t.phrase(),
+        best_label=best_t.label(),
+        best_phrase=best_t.phrase(),
+        best_steps=best_steps,
+        reply_steps=reply_steps,
+        fate_diffs=fate_diffs,
+        loss_regions=loss_regions,
+        instinct_move=instinct["move"],
+        instinct_prior=round(instinct.get("prior", 0.0), 4),
+        instinct_vs_played=instinct_vs_played,
+        instinct_phrase=instinct_phrase,
+        tenuki_value=tenuki_value,
+        tenuki_local=tenuki_local,
+        tenuki_reply=tenuki_reply,
+        tenuki_phrase=tenuki_phrase,
+        tenuki_steps=tenuki_steps,
+        tenuki_fates=tenuki_fates,
     )

@@ -465,6 +465,7 @@ class KataGoEngine(BaseEngine):
 
         if next_move:
             moves.append(next_move)
+        explicit_ownership = ownership is not None  # 讲解层的“脱先”分析会带 next_move 并显式要 ownership
         if ownership is None:
             ownership = self.config["_enable_ownership"] and not next_move
 
@@ -514,7 +515,7 @@ class KataGoEngine(BaseEngine):
             "komi": analysis_node.komi,
             "boardXSize": size_x,
             "boardYSize": size_y,
-            "includeOwnership": ownership and not next_move,
+            "includeOwnership": ownership and (explicit_ownership or not next_move),
             "includeMovesOwnership": ownership and not next_move,
             "includePolicy": include_policy,
             "initialStones": [[m.player, m.gtp()] for m in initial_stones],

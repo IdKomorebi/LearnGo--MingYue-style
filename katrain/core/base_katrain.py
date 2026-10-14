@@ -114,6 +114,13 @@ class KaTrainBase:
                         shutil.copyfile(package_config_file, user_config_file)
                         config_file = user_config_file
                         self.log(f"Copied package config to local file {config_file}", OUTPUT_INFO)
+                        # 第一次用讲解版的数据目录：把原版 KaTrain 已有的 KataGo 显卡调优结果拷过来（只读原目录），
+                        # 免得重新调优几分钟。设置不拷，两边各用各的。
+                        old_tuning = os.path.expanduser(os.path.join("~/.katrain", "opencltuning"))
+                        new_tuning = os.path.join(parent_dir, "opencltuning")
+                        if os.path.isdir(old_tuning) and not os.path.exists(new_tuning):
+                            shutil.copytree(old_tuning, new_tuning)
+                            self.log(f"Copied KataGo OpenCL tuning from {old_tuning}", OUTPUT_INFO)
                     else:  # user file exists
                         try:
                             version_str = JsonStore(user_config_file).get("general")["version"]
